@@ -250,7 +250,7 @@ Gemini indica en cada documento si la lectura ha sido `alta`, `media` o `baja`. 
 
 ---
 
-## 9. Expresiones de las columnas (por si hay que volver a pegarlas)
+## 9. Expresiones de las columnas
 
 Si al refrescar las columnas se borran las expresiones, pégalas de nuevo en cada nodo, en modo **Map Each Column Manually**.
 
