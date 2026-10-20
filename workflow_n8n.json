@@ -1,0 +1,1410 @@
+{
+  "name": "workflow_formulario_config",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "labelIds": [
+            "INBOX"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -704,
+        112
+      ],
+      "id": "654833d7-2ef5-4227-a998-30244a93c84b",
+      "name": "Gmail Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "messageId": "={{ $json.id }}",
+        "simple": false,
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -464,
+        112
+      ],
+      "id": "0f7a376a-24cc-499f-97cf-647255a8bac1",
+      "name": "Get a message"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ab10ecec-3952-4996-9bbc-87309aa8adf7",
+              "leftValue": "={{ $binary }}",
+              "rightValue": "={{ $undefined }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -240,
+        112
+      ],
+      "id": "df35d4a1-aace-4cad-a2b1-821fff18f45a",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "let newItems = [];\nfor (let item of $input.all()) {\n  if (item.binary) {\n    for (let key of Object.keys(item.binary)) {\n      const archivo = item.binary[key];\n      const esPdf = archivo.mimeType === 'application/pdf'\n        || (archivo.fileName || '').toLowerCase().endsWith('.pdf');\n      if (key.startsWith('attachment_') && esPdf) {\n        newItems.push({ json: item.json, binary: { data: archivo } });\n      }\n    }\n  }\n}\nreturn newItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "76287e7d-9844-411f-8eaa-d25ff339945b",
+      "name": "Separar adjuntos PDF"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        0
+      ],
+      "id": "4aae6b2b-372d-4cdc-9661-8fd376f62736",
+      "name": "Extraer texto Gmail"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "PON_AQUI_EL_ID_DE_TU_HOJA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Configuracion",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        464,
+        0
+      ],
+      "id": "04923bac-5b6d-45b1-ab48-54341c095e39",
+      "name": "Leer configuracion Gmail",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const filas = $input.all().map(i => i.json);\nconst general = (filas.find(f => f.tipo_documento === '_General') || {}).instrucciones || '';\nconst tipos = filas.filter(f => f.tipo_documento && f.tipo_documento !== '_General' && String(f.activo).toUpperCase() === 'SI');\nconst lista = tipos.map(t => '- \"' + t.tipo_documento + '\"').concat(['- \"Otro\" (si no encaja en ninguno)']).join('\\n');\nconst bloques = tipos.map(t => 'Si es \"' + t.tipo_documento + '\":\\n' + (t.campos || '') + (t.instrucciones ? '\\n' + t.instrucciones : '')).join('\\n\\n');\nconst docs = $('Extraer texto Gmail').all();\nconst files = $('Separar adjuntos PDF').all();\nreturn docs.map((d, i) => {\n  const id = String(i + 1);\n  const texto = d.json.text || '';\n  const prompt_base = general\n    + '\\n\\nPASO 1 - Identifica el tipo de documento con uno de estos valores exactos:\\n' + lista\n    + '\\n\\nPASO 2 - Extrae en \"datos_relevantes\" solo los campos del tipo identificado:\\n\\n' + bloques\n    + '\\n\\nSi es \"Otro\": datos_relevantes = null.'\n    + '\\n\\nFORMATO DE SALIDA:\\nDevuelve únicamente un JSON válido, sin texto antes ni después y sin bloques de código markdown, con esta estructura:\\n'\n    + '{\"id_interno\": \"' + id + '\", \"tipo_documento\": \"uno de los valores de PASO 1\", \"fecha_documento\": \"YYYY-MM-DD o null\", \"confianza\": \"alta | media | baja\", \"datos_relevantes\": { ... }}'\n    + '\\nEl campo id_interno debe ser exactamente \"' + id + '\".';\n  const archivo = files[i] && files[i].binary && files[i].binary.data ? files[i].binary.data.fileName : null;\n  return { json: { id, origen: 'gmail', archivo: archivo || null, caracteres: texto.length, text: texto, prompt_base } };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        0
+      ],
+      "id": "66033429-7cba-46ac-8a16-5bf6ee309a5c",
+      "name": "Construir prompt Gmail"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "models/gemini-3-flash-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.prompt_base }}\n\nTexto del documento:\n{{ $json.text }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        912,
+        0
+      ],
+      "id": "52faf74f-b650-496e-a5ac-d4a9132342c1",
+      "name": "Gemini Gmail",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const parts = ($input.item.json.content && $input.item.json.content.parts) || [];\nconst texto = parts.map(p => p.text || '').join('').replace(/```json/gi, '').replace(/```/g, '').trim();\nlet datos;\ntry {\n  datos = JSON.parse(texto);\n} catch (error) {\n  datos = { tipo_documento: 'Error', motivo: 'JSON no válido: ' + error.message, texto_original: texto.slice(0, 500) };\n}\nconst metas = $('Construir prompt Gmail').all().map(i => i.json);\nlet meta = metas.find(m => m.id === String(datos.id_interno));\nif (!meta && datos.id_interno === undefined && metas.length === 1) meta = metas[0];\nmeta = meta || {};\nreturn { json: {\n  ...datos,\n  archivo: meta.archivo || null,\n  origen: meta.origen || 'desconocido',\n  caracteres: meta.caracteres || null,\n  tokens_estimados: meta.caracteres ? Math.round(meta.caracteres / 4) : null\n} };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        0
+      ],
+      "id": "dc7854f4-7479-4d1a-a66c-13a75b937d08",
+      "name": "Procesar respuesta Gmail"
+    },
+    {
+      "parameters": {
+        "formTitle": "Subir documentos",
+        "formDescription": "Sube hasta 20 PDF (facturas, nóminas o presupuestos).",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Documentos",
+              "fieldType": "file",
+              "acceptFileTypes": ".pdf",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        -464,
+        480
+      ],
+      "id": "70ced20a-91d2-42f2-99a2-20a31fa5f187",
+      "name": "Form Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const salida = [];\nfor (const item of $input.all()) {\n  for (const key of Object.keys(item.binary || {})) {\n    const archivo = item.binary[key];\n    const esPdf = archivo.mimeType === 'application/pdf'\n      || (archivo.fileName || '').toLowerCase().endsWith('.pdf');\n    if (esPdf) {\n      salida.push({ json: { formulario_fecha: item.json.submittedAt || null }, binary: { data: archivo } });\n    }\n  }\n}\nreturn salida;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        480
+      ],
+      "id": "3d288394-57ca-4701-87c6-75de7ed813a9",
+      "name": "Separar archivos formulario"
+    },
+    {
+      "parameters": {
+        "maxItems": 20
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        480
+      ],
+      "id": "a4fb3ebf-d345-4589-ad18-61f68518e315",
+      "name": "Limitar a 20 documentos"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        480
+      ],
+      "id": "89f074a8-5949-4008-be9e-6da7c35391fe",
+      "name": "Extraer texto formulario"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "PON_AQUI_EL_ID_DE_TU_HOJA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Configuracion",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        432,
+        480
+      ],
+      "id": "6663993f-0621-41fd-872b-c937dac8bdf5",
+      "name": "Leer configuracion formulario",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const filas = $input.all().map(i => i.json);\nconst general = (filas.find(f => f.tipo_documento === '_General') || {}).instrucciones || '';\nconst tipos = filas.filter(f => f.tipo_documento && f.tipo_documento !== '_General' && String(f.activo).toUpperCase() === 'SI');\nconst lista = tipos.map(t => '- \"' + t.tipo_documento + '\"').concat(['- \"Otro\" (si no encaja en ninguno)']).join('\\n');\nconst bloques = tipos.map(t => 'Si es \"' + t.tipo_documento + '\":\\n' + (t.campos || '') + (t.instrucciones ? '\\n' + t.instrucciones : '')).join('\\n\\n');\nconst docs = $('Extraer texto formulario').all();\nconst files = $('Limitar a 20 documentos').all();\nreturn docs.map((d, i) => {\n  const id = String(i + 1);\n  const texto = d.json.text || '';\n  const prompt_base = general\n    + '\\n\\nPASO 1 - Identifica el tipo de documento con uno de estos valores exactos:\\n' + lista\n    + '\\n\\nPASO 2 - Extrae en \"datos_relevantes\" solo los campos del tipo identificado:\\n\\n' + bloques\n    + '\\n\\nSi es \"Otro\": datos_relevantes = null.'\n    + '\\n\\nFORMATO DE SALIDA:\\nDevuelve únicamente un JSON válido, sin texto antes ni después y sin bloques de código markdown, con esta estructura:\\n'\n    + '{\"id_interno\": \"' + id + '\", \"tipo_documento\": \"uno de los valores de PASO 1\", \"fecha_documento\": \"YYYY-MM-DD o null\", \"confianza\": \"alta | media | baja\", \"datos_relevantes\": { ... }}'\n    + '\\nEl campo id_interno debe ser exactamente \"' + id + '\".';\n  const archivo = files[i] && files[i].binary && files[i].binary.data ? files[i].binary.data.fileName : null;\n  return { json: { id, origen: 'formulario', archivo: archivo || null, caracteres: texto.length, text: texto, prompt_base } };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        480
+      ],
+      "id": "72d9498b-b595-4fe2-8b56-b0346ca8084d",
+      "name": "Construir prompt formulario"
+    },
+    {
+      "parameters": {
+        "batchSize": 2,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        880,
+        480
+      ],
+      "id": "ae31100c-7e0b-41eb-900a-8ee3b7c24a54",
+      "name": "Lotes"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.prompt_base }}\n\nTexto del documento:\n{{ $json.text }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        1104,
+        496
+      ],
+      "id": "e5eb9251-c6e7-4a0a-844c-e89809911d33",
+      "name": "Gemini formulario",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const parts = ($input.item.json.content && $input.item.json.content.parts) || [];\nconst texto = parts.map(p => p.text || '').join('').replace(/```json/gi, '').replace(/```/g, '').trim();\nlet datos;\ntry {\n  datos = JSON.parse(texto);\n} catch (error) {\n  datos = { tipo_documento: 'Error', motivo: 'JSON no válido: ' + error.message, texto_original: texto.slice(0, 500) };\n}\nconst metas = $('Construir prompt formulario').all().map(i => i.json);\nlet meta = metas.find(m => m.id === String(datos.id_interno));\nif (!meta && datos.id_interno === undefined && metas.length === 1) meta = metas[0];\nmeta = meta || {};\nreturn { json: {\n  ...datos,\n  archivo: meta.archivo || null,\n  origen: meta.origen || 'desconocido',\n  caracteres: meta.caracteres || null,\n  tokens_estimados: meta.caracteres ? Math.round(meta.caracteres / 4) : null\n} };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        512
+      ],
+      "id": "f65c53be-dc3c-401c-b080-7a4fe5fc0a62",
+      "name": "Procesar respuesta formulario"
+    },
+    {
+      "parameters": {
+        "amount": 15
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1984,
+        432
+      ],
+      "id": "7e676189-f601-4659-b2e7-431d7cd4c539",
+      "name": "Pausa entre lotes"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "fb9833a1-2336-473f-bd23-67ac7472b4ab",
+                    "leftValue": "={{ $json.tipo_documento }}",
+                    "rightValue": "Factura",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Factura"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "699769e2-79f4-4229-a832-d8cbf81f6568",
+                    "leftValue": "={{ $json.tipo_documento }}",
+                    "rightValue": "Nomina",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Nomina"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1728,
+        -16
+      ],
+      "id": "b28b757b-a6f7-4d49-871f-55d3a7072dc0",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PON_AQUI_EL_ID_DE_TU_HOJA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Factura",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Fecha": "={{ $json.fecha_documento }}",
+            "Forma de Pago": "={{ $json.datos_relevantes.forma_pago }}",
+            "IBAN": "={{ $json.datos_relevantes.iban }}",
+            "Moneda": "={{ $json.datos_relevantes.moneda }}",
+            "Total": "={{ $json.datos_relevantes.total }}",
+            "Base Imponible": "={{ $json.datos_relevantes.base_imponible }}",
+            "IRPF": "={{ $json.datos_relevantes.irpf_importe }}",
+            "IVA": "={{ $json.datos_relevantes.iva_total }}",
+            "Tipo Documento": "={{ $json.tipo_documento }}",
+            "Nombre Emisor": "={{ $json.datos_relevantes.emisor.nombre }}",
+            "CIF Emisor": "={{ $json.datos_relevantes.emisor.cif }}",
+            "Nombre Receptor": "={{ $json.datos_relevantes.receptor.nombre }}",
+            "CIF Receptor": "={{ $json.datos_relevantes.receptor.cif }}",
+            "Archivo": "={{ $json.id_interno }}",
+            "Nº Factura": "={{ $json.datos_relevantes.numero_factura }}",
+            "Vencimiento": "={{ $json.datos_relevantes.fecha_vencimiento }}",
+            "% IVA": "={{ $json.datos_relevantes.desglose_iva[0].porcentaje }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Tipo Documento",
+              "displayName": "Tipo Documento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Fecha",
+              "displayName": "Fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Archivo",
+              "displayName": "Archivo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Nº Factura",
+              "displayName": "Nº Factura",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Vencimiento",
+              "displayName": "Vencimiento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Nombre Emisor",
+              "displayName": "Nombre Emisor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "CIF Emisor",
+              "displayName": "CIF Emisor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Nombre Receptor",
+              "displayName": "Nombre Receptor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "CIF Receptor",
+              "displayName": "CIF Receptor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "% IVA",
+              "displayName": "% IVA",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "IVA",
+              "displayName": "IVA",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "IRPF",
+              "displayName": "IRPF",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Base Imponible",
+              "displayName": "Base Imponible",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Total",
+              "displayName": "Total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Moneda",
+              "displayName": "Moneda",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Forma de Pago",
+              "displayName": "Forma de Pago",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "IBAN",
+              "displayName": "IBAN",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1968,
+        -256
+      ],
+      "id": "20113523-1616-478f-8b7c-1175fbf4a623",
+      "name": "Facturas"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PON_AQUI_EL_ID_DE_TU_HOJA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Nóminas",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "num_afiliacion_ss": "={{ $json.datos_relevantes.empleado.num_afiliacion_ss }}",
+            "empleado_nif": "={{ $json.datos_relevantes.empleado.nif }}",
+            "empleado_nombre": "={{ $json.datos_relevantes.empleado.nombre }}",
+            "jornada_pct": "={{ $json.datos_relevantes.empleado.jornada_pct }}",
+            "antiguedad": "={{ $json.datos_relevantes.empleado.antiguedad }}",
+            "irpf_porcentaje": "={{ $json.datos_relevantes.irpf.porcentaje }}",
+            "irpf_base": "={{ $json.datos_relevantes.irpf.base }}",
+            "irpf_importe": "={{ $json.datos_relevantes.irpf.importe }}",
+            "base_cotizacion_ss": "={{ $json.datos_relevantes.base_cotizacion_ss }}",
+            "periodo": "={{ $json.datos_relevantes.periodo }}",
+            "fecha_pago": "={{ $json.datos_relevantes.fecha_pago }}",
+            "dias": "={{ $json.datos_relevantes.dias }}",
+            "empresa_nombre": "={{ $json.datos_relevantes.empresa.nombre }}",
+            "empresa_cif": "={{ $json.datos_relevantes.empresa.cif }}",
+            "centro_trabajo": "={{ $json.datos_relevantes.empresa.centro_trabajo }}",
+            "ccc_ss": "={{ $json.datos_relevantes.empresa.ccc_ss }}",
+            "empleado_codigo": "={{ $json.datos_relevantes.empleado.codigo }}",
+            "archivo": "={{ $json.tipo_documento }}",
+            "fecha_documento": "={{ $json.fecha_documento }}",
+            "id_documento": "={{ $json.id_interno }}",
+            "categoria": "={{ $json.datos_relevantes.empleado.categoria }}",
+            "liquido": "={{ $json.datos_relevantes.liquido }}",
+            "total_descuentos": "={{ $json.datos_relevantes.total_descuentos }}",
+            "total_devengos": "={{ $json.datos_relevantes.total_devengos }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id_documento",
+              "displayName": "id_documento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "archivo",
+              "displayName": "archivo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fecha_documento",
+              "displayName": "fecha_documento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "periodo",
+              "displayName": "periodo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fecha_pago",
+              "displayName": "fecha_pago",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "dias",
+              "displayName": "dias",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "empresa_nombre",
+              "displayName": "empresa_nombre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "empresa_cif",
+              "displayName": "empresa_cif",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "centro_trabajo",
+              "displayName": "centro_trabajo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ccc_ss",
+              "displayName": "ccc_ss",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "empleado_nombre",
+              "displayName": "empleado_nombre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "empleado_codigo",
+              "displayName": "empleado_codigo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "empleado_nif",
+              "displayName": "empleado_nif",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "num_afiliacion_ss",
+              "displayName": "num_afiliacion_ss",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "categoria",
+              "displayName": "categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "jornada_pct",
+              "displayName": "jornada_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "antiguedad",
+              "displayName": "antiguedad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "total_devengos",
+              "displayName": "total_devengos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "total_descuentos",
+              "displayName": "total_descuentos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "liquido",
+              "displayName": "liquido",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "irpf_porcentaje",
+              "displayName": "irpf_porcentaje",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "irpf_base",
+              "displayName": "irpf_base",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "irpf_importe",
+              "displayName": "irpf_importe",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "base_cotizacion_ss",
+              "displayName": "base_cotizacion_ss",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1968,
+        0
+      ],
+      "id": "d51f3f63-72ed-4d0d-a6ca-3bc7f425a164",
+      "name": "Nóminas"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PON_AQUI_EL_ID_DE_TU_HOJA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Errores",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha": "={{ $now.toISO() }}",
+            "origen": "={{ $json.origen }}",
+            "archivo": "={{ $json.archivo }}",
+            "tipo_documento": "={{ $json.tipo_documento }}",
+            "motivo": "={{ $json.motivo ?? 'Tipo no soportado' }}",
+            "texto_original": "={{ ($json.texto_original ?? '').slice(0, 500) }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "origen",
+              "displayName": "origen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "archivo",
+              "displayName": "archivo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tipo_documento",
+              "displayName": "tipo_documento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "motivo",
+              "displayName": "motivo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "texto_original",
+              "displayName": "texto_original",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1968,
+        208
+      ],
+      "id": "c53af848-1b4f-4deb-ac18-c53cf1bd1793",
+      "name": "Errores"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PON_AQUI_EL_ID_DE_TU_HOJA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha": "={{ $now.toISO() }}",
+            "origen": "={{ $json.origen }}",
+            "archivo": "={{ $json.archivo }}",
+            "tipo_documento": "={{ $json.tipo_documento }}",
+            "confianza": "={{ $json.confianza }}",
+            "caracteres": "={{ $json.caracteres }}",
+            "tokens_estimados": "={{ $json.tokens_estimados }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "origen",
+              "displayName": "origen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "archivo",
+              "displayName": "archivo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tipo_documento",
+              "displayName": "tipo_documento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "confianza",
+              "displayName": "confianza",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "caracteres",
+              "displayName": "caracteres",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tokens_estimados",
+              "displayName": "tokens_estimados",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1984,
+        672
+      ],
+      "id": "f0a2220a-4f22-484d-9f40-053ef72a3bd0",
+      "name": "Log"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a message": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Separar adjuntos PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar adjuntos PDF": {
+      "main": [
+        [
+          {
+            "node": "Extraer texto Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer texto Gmail": {
+      "main": [
+        [
+          {
+            "node": "Leer configuracion Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer configuracion Gmail": {
+      "main": [
+        [
+          {
+            "node": "Construir prompt Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir prompt Gmail": {
+      "main": [
+        [
+          {
+            "node": "Gemini Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Gmail": {
+      "main": [
+        [
+          {
+            "node": "Procesar respuesta Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar respuesta Gmail": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Form Trigger": {
+      "main": [
+        [
+          {
+            "node": "Separar archivos formulario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar archivos formulario": {
+      "main": [
+        [
+          {
+            "node": "Limitar a 20 documentos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limitar a 20 documentos": {
+      "main": [
+        [
+          {
+            "node": "Extraer texto formulario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer texto formulario": {
+      "main": [
+        [
+          {
+            "node": "Leer configuracion formulario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer configuracion formulario": {
+      "main": [
+        [
+          {
+            "node": "Construir prompt formulario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir prompt formulario": {
+      "main": [
+        [
+          {
+            "node": "Lotes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lotes": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Gemini formulario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini formulario": {
+      "main": [
+        [
+          {
+            "node": "Procesar respuesta formulario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar respuesta formulario": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pausa entre lotes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pausa entre lotes": {
+      "main": [
+        [
+          {
+            "node": "Lotes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Facturas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nóminas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Errores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "a75e5116-59fa-4bf8-9134-1a874596a2f3",
+  "nodeGroups": [],
+  "id": "A09HPNMOgcof6VFA",
+  "tags": []
+}
